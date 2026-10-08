@@ -1,0 +1,69 @@
+name: flowdesk
+services:
+  app:
+    image: flowdesk-app
+    build: .
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8090}:8090"
+    environment:
+      DATABASE_URL: postgres://flowdesk:flowdesk@postgres:5432/flowdesk?sslmode=disable
+      REDIS_ADDR: redis:6379
+      PUBLIC_URL: http://localhost:${HTTP_PORT:-8090}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  seed:
+    profiles: ["demo"]
+    image: flowdesk-app
+    build: .
+    command: ["./seed"]
+    environment:
+      DATABASE_URL: postgres://flowdesk:flowdesk@postgres:5432/flowdesk?sslmode=disable
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-Demo-password-2026}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: flowdesk
+      POSTGRES_PASSWORD: flowdesk
+      POSTGRES_DB: flowdesk
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowdesk -d flowdesk"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgres://flowdesk:flowdesk@postgres:5432/flowdesk_test?sslmode=disable
+      TEST_REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+volumes:
+  postgres_data:
